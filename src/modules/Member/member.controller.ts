@@ -22,9 +22,7 @@ import {
   NAVER_TOKEN_URL,
   NAVER_USER_INFO_URL,
 } from "../../libs/utils/constants";
-// @ts-ignore
-const jose = require("jose");
-
+import jwt from "jsonwebtoken";
 import {
   JWT_EXPIRATION_TIME,
   JWT_SECRET,
@@ -148,7 +146,7 @@ export const googleTokenHandler = async (
       return reply.status(400).send({ error: "Missing ID token from Google" });
     }
 
-    const decoded = jose.decodeJwt(data.id_token) as any;
+    const decoded = jwt.decode(data.id_token) as any;
     const userInfo: any = {
       ...decoded,
       provider: "google",
@@ -157,29 +155,28 @@ export const googleTokenHandler = async (
     const sub = userInfo.sub;
     const issuedAt = Math.floor(Date.now() / 1000);
     const jti = uuidv4();
+    const accessToken = jwt.sign(userInfoWithoutExp, JWT_SECRET as string, {
+      expiresIn: JWT_EXPIRATION_TIME,
+      subject: sub,
+    });
 
-    const accessToken = await new jose.SignJWT(userInfoWithoutExp)
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime(JWT_EXPIRATION_TIME)
-      .setSubject(sub)
-      .setIssuedAt(issuedAt)
-      .sign(new TextEncoder().encode(JWT_SECRET));
-
-    const refreshToken = await new jose.SignJWT({
-      sub,
-      jti,
-      type: "refresh",
-      name: userInfo.name,
-      email: userInfo.email,
-      picture: userInfo.picture,
-      given_name: userInfo.given_name,
-      family_name: userInfo.family_name,
-      email_verified: userInfo.email_verified,
-    })
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime(REFRESH_TOKEN_EXPIRY)
-      .setIssuedAt(issuedAt)
-      .sign(new TextEncoder().encode(JWT_SECRET));
+    const refreshToken = jwt.sign(
+      {
+        sub,
+        jti,
+        type: "refresh",
+        name: userInfo.name,
+        email: userInfo.email,
+        picture: userInfo.picture,
+        given_name: userInfo.given_name,
+        family_name: userInfo.family_name,
+        email_verified: userInfo.email_verified,
+      },
+      JWT_SECRET as string,
+      {
+        expiresIn: REFRESH_TOKEN_EXPIRY,
+      }
+    );
 
     await memberService.findOrCreateSocialMember(userInfo);
 
@@ -329,23 +326,22 @@ export const kakaoTokenHandler = async (
   const issuedAt = Math.floor(Date.now() / 1000);
   const jti = crypto.randomUUID();
 
-  const accessToken = await new jose.SignJWT(userInfo)
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(JWT_EXPIRATION_TIME)
-    .setSubject(userInfo.sub)
-    .setIssuedAt(issuedAt)
-    .sign(new TextEncoder().encode(JWT_SECRET));
+  const accessToken = jwt.sign(userInfo, JWT_SECRET as string, {
+    expiresIn: JWT_EXPIRATION_TIME,
+    subject: userInfo.sub,
+  });
 
-  const refreshToken = await new jose.SignJWT({
-    ...userInfo,
-    jti,
-    type: "refresh",
-  })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(REFRESH_TOKEN_EXPIRY)
-    .setIssuedAt(issuedAt)
-    .sign(new TextEncoder().encode(JWT_SECRET));
-
+  const refreshToken = jwt.sign(
+    {
+      ...userInfo,
+      jti,
+      type: "refresh",
+    },
+    JWT_SECRET as string,
+    {
+      expiresIn: REFRESH_TOKEN_EXPIRY,
+    }
+  );
   return reply.send({
     accessToken,
     refreshToken,
@@ -484,23 +480,22 @@ export const naverTokenHandler = async (
   const issuedAt = Math.floor(Date.now() / 1000);
   const jti = crypto.randomUUID();
 
-  const accessToken = await new jose.SignJWT(userInfo)
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(JWT_EXPIRATION_TIME)
-    .setSubject(userInfo.sub)
-    .setIssuedAt(issuedAt)
-    .sign(new TextEncoder().encode(JWT_SECRET));
+  const accessToken = jwt.sign(userInfo, JWT_SECRET as string, {
+    expiresIn: JWT_EXPIRATION_TIME,
+    subject: userInfo.sub,
+  });
 
-  const refreshToken = await new jose.SignJWT({
-    ...userInfo,
-    jti,
-    type: "refresh",
-  })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(REFRESH_TOKEN_EXPIRY)
-    .setIssuedAt(issuedAt)
-    .sign(new TextEncoder().encode(JWT_SECRET));
-
+  const refreshToken = jwt.sign(
+    {
+      ...userInfo,
+      jti,
+      type: "refresh",
+    },
+    JWT_SECRET as string,
+    {
+      expiresIn: REFRESH_TOKEN_EXPIRY,
+    }
+  );
   return reply.send({
     accessToken,
     refreshToken,
@@ -523,12 +518,9 @@ export const userInfoHandler = async (
     const token = authHeader.split(" ")[1];
 
     try {
-      const verified = await jose.jwtVerify(
-        token,
-        new TextEncoder().encode(JWT_SECRET)
-      );
+      const verified = jwt.verify(token, JWT_SECRET as string);
 
-      return reply.send({ ...verified.payload });
+      return reply.send({ ...(verified as any) });
     } catch (error) {
       return reply.status(401).send({ error: "Invalid token" });
     }
@@ -561,20 +553,18 @@ export const refreshTokenHandler = async (
       if (authHeader && authHeader.startsWith("Bearer ")) {
         const accessToken = authHeader.split(" ")[1];
         try {
-          const decoded = await jose.jwtVerify(
-            accessToken,
-            new TextEncoder().encode(JWT_SECRET)
-          );
+          const decoded = jwt.verify(accessToken, JWT_SECRET as string) as any;
           const userInfo = decoded.payload;
           const issuedAt = Math.floor(Date.now() / 1000);
 
-          const newAccessToken = await new jose.SignJWT({ ...userInfo })
-            .setProtectedHeader({ alg: "HS256" })
-            .setExpirationTime(JWT_EXPIRATION_TIME)
-            .setSubject(userInfo.sub as string)
-            .setIssuedAt(issuedAt)
-            .sign(new TextEncoder().encode(JWT_SECRET));
-
+          const newAccessToken = jwt.sign(
+            { ...userInfo },
+            JWT_SECRET as string,
+            {
+              expiresIn: JWT_EXPIRATION_TIME,
+              subject: userInfo.sub,
+            }
+          );
           return reply.send({
             accessToken: newAccessToken,
           });
@@ -591,15 +581,9 @@ export const refreshTokenHandler = async (
 
     let decoded;
     try {
-      decoded = await jose.jwtVerify(
-        refreshToken,
-        new TextEncoder().encode(JWT_SECRET)
-      );
+      decoded = jwt.verify(refreshToken, JWT_SECRET as string) as any;
     } catch (error: any) {
-      if (
-        error.code === "ERR_JWT_EXPIRED" ||
-        error instanceof jose.errors.JWTExpired
-      ) {
+      if (error.name === "TokenExpiredError") {
         return reply
           .status(401)
           .send({ error: "Refresh token expired, please sign in again" });
@@ -629,24 +613,23 @@ export const refreshTokenHandler = async (
     };
 
     // New access token
-    const newAccessToken = await new jose.SignJWT(userInfo)
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime(JWT_EXPIRATION_TIME)
-      .setSubject(sub)
-      .setIssuedAt(issuedAt)
-      .sign(new TextEncoder().encode(JWT_SECRET));
+    const newAccessToken = jwt.sign(userInfo, JWT_SECRET as string, {
+      expiresIn: JWT_EXPIRATION_TIME,
+      subject: sub,
+    });
 
     // New refresh token
-    const newRefreshToken = await new jose.SignJWT({
-      ...userInfo,
-      jti,
-      type: "refresh",
-    })
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime(REFRESH_TOKEN_EXPIRY)
-      .setIssuedAt(issuedAt)
-      .sign(new TextEncoder().encode(JWT_SECRET));
-
+    const newRefreshToken = jwt.sign(
+      {
+        ...userInfo,
+        jti,
+        type: "refresh",
+      },
+      JWT_SECRET as string,
+      {
+        expiresIn: REFRESH_TOKEN_EXPIRY,
+      }
+    );
     return reply.send({
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
