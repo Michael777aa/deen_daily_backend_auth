@@ -22,7 +22,9 @@ import {
   NAVER_TOKEN_URL,
   NAVER_USER_INFO_URL,
 } from "../../libs/utils/constants";
-import * as jose from "jose";
+// @ts-ignore
+const jose = require("jose");
+
 import {
   JWT_EXPIRATION_TIME,
   JWT_SECRET,
